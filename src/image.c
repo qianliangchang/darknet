@@ -3,26 +3,35 @@
 #include "blas.h"
 #include "cuda.h"
 #include <stdio.h>
+#ifndef _USE_MATH_DEFINES
+#define _USE_MATH_DEFINES
+#endif
 #include <math.h>
 
+#ifndef STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+#endif
+#ifndef STB_IMAGE_WRITE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+#endif
 
 #ifdef OPENCV
-#include "opencv2/highgui/highgui_c.h"
-#include "opencv2/imgproc/imgproc_c.h"
-#include "opencv2/core/types_c.h"
-#include "opencv2/core/version.hpp"
+#include <opencv2/highgui/highgui_c.h>
+#include <opencv2/imgproc/imgproc_c.h>
+#include <opencv2/core/types_c.h>
+#include <opencv2/core/version.hpp>
 #ifndef CV_VERSION_EPOCH
-#include "opencv2/videoio/videoio_c.h"
-#include "opencv2/imgcodecs/imgcodecs_c.h"
+#include <opencv2/videoio/videoio_c.h>
+#include <opencv2/imgcodecs/imgcodecs_c.h>
 #include "http_stream.h"
 #endif
 #include "http_stream.h"
 
+#ifndef CV_RGB
 #define CV_RGB(r, g, b) cvScalar( (b), (g), (r), 0 )
+#endif
 #endif
 
 extern int check_mistakes;
@@ -254,9 +263,9 @@ image **load_alphabet()
 {
     int i, j;
     const int nsize = 8;
-    image **alphabets = calloc(nsize, sizeof(image));
+    image** alphabets = (image**)calloc(nsize, sizeof(image*));
     for(j = 0; j < nsize; ++j){
-        alphabets[j] = calloc(128, sizeof(image));
+        alphabets[j] = (image*)calloc(128, sizeof(image));
         for(i = 32; i < 127; ++i){
             char buff[256];
             sprintf(buff, "data/labels/%d_%d.png", i, j);
@@ -269,17 +278,18 @@ image **load_alphabet()
 
 
 // Creates array of detections with prob > thresh and fills best_class for them
-detection_with_class* get_actual_detections(detection *dets, int dets_num, float thresh, int* selected_detections_num)
+detection_with_class* get_actual_detections(detection *dets, int dets_num, float thresh, int* selected_detections_num, char **names)
 {
     int selected_num = 0;
-    detection_with_class* result_arr = calloc(dets_num, sizeof(detection_with_class));
+    detection_with_class* result_arr = (detection_with_class*)calloc(dets_num, sizeof(detection_with_class));
     int i;
     for (i = 0; i < dets_num; ++i) {
         int best_class = -1;
         float best_class_prob = thresh;
         int j;
         for (j = 0; j < dets[i].classes; ++j) {
-            if (dets[i].prob[j] > best_class_prob ) {
+            int show = strncmp(names[j], "dont_show", 9);
+            if (dets[i].prob[j] > best_class_prob && show) {
                 best_class = j;
                 best_class_prob = dets[i].prob[j];
             }
@@ -313,8 +323,11 @@ int compare_by_probs(const void *a_ptr, const void *b_ptr) {
 
 void draw_detections_v3(image im, detection *dets, int num, float thresh, char **names, image **alphabet, int classes, int ext_output)
 {
+    static int frame_id = 0;
+    frame_id++;
+
     int selected_detections_num;
-    detection_with_class* selected_detections = get_actual_detections(dets, num, thresh, &selected_detections_num);
+    detection_with_class* selected_detections = get_actual_detections(dets, num, thresh, &selected_detections_num, names);
 
     // text output
     qsort(selected_detections, selected_detections_num, sizeof(*selected_detections), compare_by_lefts);
@@ -324,9 +337,9 @@ void draw_detections_v3(image im, detection *dets, int num, float thresh, char *
         printf("%s: %.0f%%", names[best_class],    selected_detections[i].det.prob[best_class] * 100);
         if (ext_output)
             printf("\t(left_x: %4.0f   top_y: %4.0f   width: %4.0f   height: %4.0f)\n",
-                (selected_detections[i].det.bbox.x - selected_detections[i].det.bbox.w / 2)*im.w,
-                (selected_detections[i].det.bbox.y - selected_detections[i].det.bbox.h / 2)*im.h,
-                selected_detections[i].det.bbox.w*im.w, selected_detections[i].det.bbox.h*im.h);
+                round((selected_detections[i].det.bbox.x - selected_detections[i].det.bbox.w / 2)*im.w),
+                round((selected_detections[i].det.bbox.y - selected_detections[i].det.bbox.h / 2)*im.h),
+                round(selected_detections[i].det.bbox.w*im.w), round(selected_detections[i].det.bbox.h*im.h));
         else
             printf("\n");
         int j;
@@ -381,6 +394,23 @@ void draw_detections_v3(image im, detection *dets, int num, float thresh, char *
             //int b_width = right - left;
             //int b_height = bot - top;
             //sprintf(labelstr, "%d x %d - w: %d, h: %d", b_x_center, b_y_center, b_width, b_height);
+
+            // you should create directory: result_img
+            //static int copied_frame_id = -1;
+            //static image copy_img;
+            //if (copied_frame_id != frame_id) {
+            //    copied_frame_id = frame_id;
+            //    if (copy_img.data) free_image(copy_img);
+            //    copy_img = copy_image(im);
+            //}
+            //image cropped_im = crop_image(copy_img, left, top, right - left, bot - top);
+            //static int img_id = 0;
+            //img_id++;
+            //char image_name[1024];
+            //int best_class_id = selected_detections[i].best_class;
+            //sprintf(image_name, "result_img/img_%d_%d_%d_%s.jpg", frame_id, img_id, best_class_id, names[best_class_id]);
+            //save_image(cropped_im, image_name);
+            //free_image(cropped_im);
 
             if (im.c == 1) {
                 draw_box_width_bw(im, left, top, right, bot, width, 0.8);    // 1 channel Black-White
@@ -478,6 +508,22 @@ void draw_detections(image im, int num, float thresh, box *boxes, float **probs,
 
 #ifdef OPENCV
 
+void save_cv_png(IplImage *img, const char *name)
+{
+    IplImage* img_rgb = cvCreateImage(cvSize(img->width, img->height), 8, 3);
+    cvCvtColor(img, img_rgb, CV_RGB2BGR);
+    stbi_write_png(name, img_rgb->width, img_rgb->height, 3, (char *)img_rgb->imageData, 0);
+    cvRelease((void**)&img_rgb);
+}
+
+void save_cv_jpg(IplImage *img, const char *name)
+{
+    IplImage* img_rgb = cvCreateImage(cvSize(img->width, img->height), 8, 3);
+    cvCvtColor(img, img_rgb, CV_RGB2BGR);
+    stbi_write_jpg(name, img_rgb->width, img_rgb->height, 3, (char *)img_rgb->imageData, 80);
+    cvRelease((void**)&img_rgb);
+}
+
 void draw_detections_cv_v3(IplImage* show_img, detection *dets, int num, float thresh, char **names, image **alphabet, int classes, int ext_output)
 {
     int i, j;
@@ -489,7 +535,8 @@ void draw_detections_cv_v3(IplImage* show_img, detection *dets, int num, float t
         char labelstr[4096] = { 0 };
         int class_id = -1;
         for (j = 0; j < classes; ++j) {
-            if (dets[i].prob[j] > thresh) {
+            int show = strncmp(names[j], "dont_show", 9);
+            if (dets[i].prob[j] > thresh && show) {
                 if (class_id < 0) {
                     strcat(labelstr, names[j]);
                     class_id = j;
@@ -572,7 +619,7 @@ void draw_detections_cv_v3(IplImage* show_img, detection *dets, int num, float t
             //static int img_id = 0;
             //img_id++;
             //char image_name[1024];
-            //sprintf(image_name, "result_img/img_%d_%d_%d.jpg", frame_id, img_id, class_id);
+            //sprintf(image_name, "result_img/img_%d_%d_%d_%s.jpg", frame_id, img_id, class_id, names[class_id]);
             //CvRect rect = cvRect(pt1.x, pt1.y, pt2.x - pt1.x, pt2.y - pt1.y);
             //cvSetImageROI(copy_img, rect);
             //cvSaveImage(image_name, copy_img, 0);
@@ -669,7 +716,7 @@ void draw_detections_cv(IplImage* show_img, int num, float thresh, box *boxes, f
     }
 }
 
-IplImage* draw_train_chart(float max_img_loss, int max_batches, int number_of_lines, int img_size)
+IplImage* draw_train_chart(float max_img_loss, int max_batches, int number_of_lines, int img_size, int dont_show)
 {
     int img_offset = 50;
     int draw_size = img_size - img_offset;
@@ -710,17 +757,20 @@ IplImage* draw_train_chart(float max_img_loss, int max_batches, int number_of_li
     char max_batches_buff[100];
     sprintf(max_batches_buff, "in cfg max_batches=%d", max_batches);
     cvPutText(img, max_batches_buff, cvPoint(draw_size - 195, img_size - 10), &font, CV_RGB(0, 0, 0));
-    cvPutText(img, "Press 's' to save: chart.jpg", cvPoint(5, img_size - 10), &font, CV_RGB(0, 0, 0));
-    printf(" If error occurs - run training with flag: -dont_show \n");
-    cvNamedWindow("average loss", CV_WINDOW_NORMAL);
-    cvMoveWindow("average loss", 0, 0);
-    cvResizeWindow("average loss", img_size, img_size);
-    cvShowImage("average loss", img);
-    cvWaitKey(20);
+    cvPutText(img, "Press 's' to save: chart.png", cvPoint(5, img_size - 10), &font, CV_RGB(0, 0, 0));
+    if (!dont_show) {
+        printf(" If error occurs - run training with flag: -dont_show \n");
+        cvNamedWindow("average loss", CV_WINDOW_NORMAL);
+        cvMoveWindow("average loss", 0, 0);
+        cvResizeWindow("average loss", img_size, img_size);
+        cvShowImage("average loss", img);
+        cvWaitKey(20);
+    }
     return img;
 }
 
-void draw_train_loss(IplImage* img, int img_size, float avg_loss, float max_img_loss, int current_batch, int max_batches, float precision)
+void draw_train_loss(IplImage* img, int img_size, float avg_loss, float max_img_loss, int current_batch, int max_batches,
+    float precision, int draw_precision, char *accuracy_name, int dont_show, int mjpeg_port)
 {
     int img_offset = 50;
     int draw_size = img_size - img_offset;
@@ -734,18 +784,19 @@ void draw_train_loss(IplImage* img, int img_size, float avg_loss, float max_img_
     cvCircle(img, pt1, 1, CV_RGB(0, 0, 255), CV_FILLED, 8, 0);
 
     // precision
-    if (precision >= 0) {
+    if (draw_precision) {
         static float old_precision = 0;
-        static iteration_old = 0;
+        static int iteration_old = 0;
+        static int text_iteration_old = 0;
+        if(iteration_old == 0) cvPutText(img, accuracy_name, cvPoint(0, 12), &font, CV_RGB(255, 0, 0));
 
-        if (old_precision != precision) {
-            cvLine(img,
-                cvPoint(img_offset + draw_size * (float)iteration_old / max_batches, draw_size * (1 - old_precision)),
-                cvPoint(img_offset + draw_size * (float)current_batch / max_batches, draw_size * (1 - precision)),
-                CV_RGB(255, 0, 0), 1, 8, 0);
+        cvLine(img,
+            cvPoint(img_offset + draw_size * (float)iteration_old / max_batches, draw_size * (1 - old_precision)),
+            cvPoint(img_offset + draw_size * (float)current_batch / max_batches, draw_size * (1 - precision)),
+            CV_RGB(255, 0, 0), 1, 8, 0);
 
-            old_precision = precision;
-            iteration_old = current_batch;
+        if (((int)(old_precision*10) != (int)(precision*10)) || (current_batch - text_iteration_old) >= max_batches/10) {
+            text_iteration_old = current_batch;
             sprintf(char_buff, "%2.0f%% ", precision * 100);
             CvFont font3;
             cvInitFont(&font3, CV_FONT_HERSHEY_COMPLEX_SMALL, 0.7, 0.7, 0, 5, CV_AA);
@@ -755,7 +806,8 @@ void draw_train_loss(IplImage* img, int img_size, float avg_loss, float max_img_
             cvInitFont(&font2, CV_FONT_HERSHEY_COMPLEX_SMALL, 0.7, 0.7, 0, 1, CV_AA);
             cvPutText(img, char_buff, cvPoint(pt1.x - 30, draw_size * (1 - precision) + 15), &font2, CV_RGB(200, 0, 0));
         }
-        cvPutText(img, "mAP%", cvPoint(0, 12), &font, CV_RGB(255, 0, 0));
+        old_precision = precision;
+        iteration_old = current_batch;
     }
 
     sprintf(char_buff, "current avg loss = %2.4f    iteration = %d", avg_loss, current_batch);
@@ -765,16 +817,19 @@ void draw_train_loss(IplImage* img, int img_size, float avg_loss, float max_img_
     pt1.y += 15;
     cvPutText(img, char_buff, pt1, &font, CV_RGB(0, 0, 0));
 
-
-
-    cvShowImage("average loss", img);
-    int k = cvWaitKey(20);
+    int k = 0;
+    if (!dont_show) {
+        cvShowImage("average loss", img);
+        k = cvWaitKey(20);
+    }
     if (k == 's' || current_batch == (max_batches - 1) || current_batch % 100 == 0) {
-        cvSaveImage("chart.jpg", img, 0);
+        save_cv_png(img, "chart.png");
         cvPutText(img, "- Saved", cvPoint(250, img_size - 10), &font, CV_RGB(255, 0, 0));
     }
     else
         cvPutText(img, "- Saved", cvPoint(250, img_size - 10), &font, CV_RGB(255, 255, 255));
+
+    if (mjpeg_port > 0) send_mjpeg(img, mjpeg_port, 200000, 80);
 }
 #endif    // OPENCV
 
@@ -905,8 +960,8 @@ void normalize_image(image p)
 
 void normalize_image2(image p)
 {
-    float *min = calloc(p.c, sizeof(float));
-    float *max = calloc(p.c, sizeof(float));
+    float* min = (float*)calloc(p.c, sizeof(float));
+    float* max = (float*)calloc(p.c, sizeof(float));
     int i,j;
     for(i = 0; i < p.c; ++i) min[i] = max[i] = p.data[i*p.h*p.w];
 
@@ -935,7 +990,7 @@ void normalize_image2(image p)
 image copy_image(image p)
 {
     image copy = p;
-    copy.data = calloc(p.h*p.w*p.c, sizeof(float));
+    copy.data = (float*)calloc(p.h * p.w * p.c, sizeof(float));
     memcpy(copy.data, p.data, p.h*p.w*p.c*sizeof(float));
     return copy;
 }
@@ -1006,7 +1061,7 @@ void show_image_cv_ipl(IplImage *disp, const char *name)
     cvShowImage(buff, disp);
     //cvReleaseImage(&disp);
 }
-#endif
+#endif  // OPENCV
 
 void show_image(image p, const char *name)
 {
@@ -1198,37 +1253,14 @@ int get_stream_fps(CvCapture *cap, int cpp_video_capture)
     }
     return fps;
 }
-
-void save_image_jpg(image p, const char *name)
-{
-    image copy = copy_image(p);
-    if(p.c == 3) rgbgr_image(copy);
-    int x,y,k;
-
-    char buff[256];
-    sprintf(buff, "%s.jpg", name);
-
-    IplImage *disp = cvCreateImage(cvSize(p.w,p.h), IPL_DEPTH_8U, p.c);
-    int step = disp->widthStep;
-    for(y = 0; y < p.h; ++y){
-        for(x = 0; x < p.w; ++x){
-            for(k= 0; k < p.c; ++k){
-                disp->imageData[y*step + x*p.c + k] = (unsigned char)(get_pixel(copy,x,y,k)*255);
-            }
-        }
-    }
-    cvSaveImage(buff, disp,0);
-    cvReleaseImage(&disp);
-    free_image(copy);
-}
-#endif
+#endif  // OPENCV
 
 void save_image_png(image im, const char *name)
 {
     char buff[256];
     //sprintf(buff, "%s (%d)", name, windows);
     sprintf(buff, "%s.png", name);
-    unsigned char *data = calloc(im.w*im.h*im.c, sizeof(char));
+    unsigned char* data = (unsigned char*)calloc(im.w * im.h * im.c, sizeof(unsigned char));
     int i,k;
     for(k = 0; k < im.c; ++k){
         for(i = 0; i < im.w*im.h; ++i){
@@ -1240,15 +1272,40 @@ void save_image_png(image im, const char *name)
     if(!success) fprintf(stderr, "Failed to write image %s\n", buff);
 }
 
-void save_image(image im, const char *name)
+void save_image_options(image im, const char *name, IMTYPE f, int quality)
 {
-#ifdef OPENCV
-    save_image_jpg(im, name);
-#else
-    save_image_png(im, name);
-#endif
+    char buff[256];
+    //sprintf(buff, "%s (%d)", name, windows);
+    if (f == PNG)       sprintf(buff, "%s.png", name);
+    else if (f == BMP) sprintf(buff, "%s.bmp", name);
+    else if (f == TGA) sprintf(buff, "%s.tga", name);
+    else if (f == JPG) sprintf(buff, "%s.jpg", name);
+    else               sprintf(buff, "%s.png", name);
+    unsigned char* data = (unsigned char*)calloc(im.w * im.h * im.c, sizeof(unsigned char));
+    int i, k;
+    for (k = 0; k < im.c; ++k) {
+        for (i = 0; i < im.w*im.h; ++i) {
+            data[i*im.c + k] = (unsigned char)(255 * im.data[i + k*im.w*im.h]);
+        }
+    }
+    int success = 0;
+    if (f == PNG)       success = stbi_write_png(buff, im.w, im.h, im.c, data, im.w*im.c);
+    else if (f == BMP) success = stbi_write_bmp(buff, im.w, im.h, im.c, data);
+    else if (f == TGA) success = stbi_write_tga(buff, im.w, im.h, im.c, data);
+    else if (f == JPG) success = stbi_write_jpg(buff, im.w, im.h, im.c, data, quality);
+    free(data);
+    if (!success) fprintf(stderr, "Failed to write image %s\n", buff);
 }
 
+void save_image(image im, const char *name)
+{
+    save_image_options(im, name, JPG, 80);
+}
+
+void save_image_jpg(image p, const char *name)
+{
+    save_image_options(p, name, JPG, 80);
+}
 
 void show_image_layers(image p, char *name)
 {
@@ -1282,14 +1339,14 @@ image make_empty_image(int w, int h, int c)
 image make_image(int w, int h, int c)
 {
     image out = make_empty_image(w,h,c);
-    out.data = calloc(h*w*c, sizeof(float));
+    out.data = (float*)calloc(h * w * c, sizeof(float));
     return out;
 }
 
 image make_random_image(int w, int h, int c)
 {
     image out = make_empty_image(w,h,c);
-    out.data = calloc(h*w*c, sizeof(float));
+    out.data = (float*)calloc(h * w * c, sizeof(float));
     int i;
     for(i = 0; i < w*h*c; ++i){
         out.data[i] = (rand_normal() * .25) + .5;
@@ -1536,7 +1593,7 @@ image random_augment_image(image im, float angle, float aspect, int low, int hig
     int min = (im.h < im.w*aspect) ? im.h : im.w*aspect;
     float scale = (float)r / min;
 
-    float rad = rand_uniform(-angle, angle) * TWO_PI / 360.;
+    float rad = rand_uniform(-angle, angle) * 2.0 * M_PI / 360.;
 
     float dx = (im.w*scale/aspect - size) / 2.;
     float dy = (im.h*scale - size) / 2.;
@@ -2085,5 +2142,24 @@ void free_image(image m)
 {
     if(m.data){
         free(m.data);
+    }
+}
+
+// Fast copy data from a contiguous byte array into the image.
+LIB_API void copy_image_from_bytes(image im, char *pdata)
+{
+    unsigned char *data = (unsigned char*)pdata;
+    int i, k, j;
+    int w = im.w;
+    int h = im.h;
+    int c = im.c;
+    for (k = 0; k < c; ++k) {
+        for (j = 0; j < h; ++j) {
+            for (i = 0; i < w; ++i) {
+                int dst_index = i + w * j + w * h*k;
+                int src_index = k + c * i + c * w*j;
+                im.data[dst_index] = (float)data[src_index] / 255.;
+            }
+        }
     }
 }
